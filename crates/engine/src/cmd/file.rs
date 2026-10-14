@@ -78,11 +78,12 @@ pub fn specs() -> Vec<CommandSpec> {
         })
         .key("Mod+P / Mod+Shift+F12 / Mod+F2")
         .pure(),
-        CommandSpec::new("file.close", "Close", "File", |s, _| {
-            s.ui_requests.push(json!({"close": true}));
+        CommandSpec::new("file.close", "Close", "File", |s, v| {
+            s.ui_requests.push(json!({"close": true, "quit": p::bool(v, "quit").unwrap_or(false)}));
             sel_result(s)
         })
         .key("Mod+W / Mod+F4")
+        .params(r#"{"quit"?: bool (close the window and quit the app too; the window's close button does this)} — closes the document only, the app stays open"#)
         .pure(),
         CommandSpec::new("file.properties", "Properties", "File › Info", properties)
             .params(r#"{"title"?, "subject"?, "author"?, "keywords"?, "comments"?, "category"?, "custom"?: {name: string | null (removes)}}"#),

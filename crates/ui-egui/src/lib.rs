@@ -927,7 +927,7 @@ impl WordApp {
         if self.quit_requested || !self.session.dirty || !self.has_document() {
             return true;
         }
-        let _ = self.run("file.close", json!({}));
+        let _ = self.run("file.close", json!({"quit": true}));
         false
     }
 
@@ -995,7 +995,23 @@ impl WordApp {
             }
         }
         if req.get("close").is_some() {
-            self.quit_requested = true;
+            if req.get("quit").and_then(Value::as_bool) == Some(true) {
+                self.quit_requested = true;
+            } else {
+                self.close_document();
+            }
+        }
+    }
+
+    /// File › Close: close the document and leave the window open with no document, as at start-up
+    /// without one (#1129). The session holds a blank placeholder until a document is created or
+    /// opened.
+    fn close_document(&mut self) {
+        if self.execute("file.new", json!({})).is_ok() {
+            self.no_document = Some(self.session.document_id());
+            if self.ui.backstage {
+                self.ui.backstage_page = "home".into();
+            }
         }
     }
 
@@ -3089,25 +3105,34 @@ mod tests {
         assert!(body_text(&a).contains(UNSAVED));
     }
 
-    /// Mod+W ran `file.close`, which quit at once.
+    /// Mod+W ran `file.close`, which quit the whole app. #1712: Close closes only the document
+    /// (the window stays, with no document open); quitting is the window's close button or
+    /// `app.quit`.
     #[test]
-    fn close_asks_before_quitting() {
+    fn close_asks_before_closing_the_document() {
         let mut a = typed();
         a.run("file.close", json!({})).unwrap();
         assert_eq!(prompt(&a), Some("saveChanges"));
-        assert!(!a.quit_requested);
+        assert!(a.has_document());
         a.run("ui.saveChanges", json!({"answer": "cancel"})).unwrap();
-        assert!(!a.quit_requested);
+        assert!(a.has_document(), "Cancel keeps the document");
 
         a.run("file.close", json!({})).unwrap();
         a.run("ui.saveChanges", json!({"answer": "dontSave"})).unwrap();
-        assert!(a.quit_requested);
+        assert!(!a.has_document(), "Don't Save closes the document");
+        assert!(!a.quit_requested, "but not the app");
 
         // A clean document closes straight away.
         let mut clean = app();
         clean.run("file.close", json!({})).unwrap();
         assert_eq!(prompt(&clean), None);
-        assert!(clean.quit_requested);
+        assert!(!clean.has_document());
+        assert!(!clean.quit_requested, "Close leaves the app open");
+
+        // Closing the app is a separate command.
+        let mut quit = app();
+        quit.execute("file.close", json!({"quit": true})).unwrap();
+        assert!(quit.quit_requested);
     }
 
     /// The window's close button quit at once; now it asks (the host cancels the close on false).
@@ -3277,7 +3302,7 @@ mod tests {
             }
             let a = h.state();
             assert_eq!(prompt(a), None, "{focus:?}: answered");
-            assert_eq!(a.quit_requested, quits, "{focus:?}: quit");
+            assert_eq!(!a.has_document(), quits, "{focus:?}: closed");
             assert_eq!(std::fs::read(&path).unwrap() != before, saves, "{focus:?}: file written");
             let _ = std::fs::remove_dir_all(&dir);
         }
@@ -3330,7 +3355,7 @@ mod tests {
             }
             let a = h.state();
             assert_eq!(prompt(a), None, "{arrows:?}: answered");
-            assert_eq!(a.quit_requested, quits, "{arrows:?}: quit");
+            assert_eq!(!a.has_document(), quits, "{arrows:?}: closed");
             assert_eq!(std::fs::read(&path).unwrap() != before, saves, "{arrows:?}: file written");
             let _ = std::fs::remove_dir_all(&dir);
         }
@@ -3973,7 +3998,7 @@ mod tests {
         a.services.pick_save = Some(Box::new(move |_| Some(picked.clone())));
         a.run("file.close", json!({})).unwrap();
         a.run("ui.saveChanges", json!({"answer": "save"})).unwrap();
-        assert!(a.quit_requested);
+        assert!(!a.has_document());
         let saved = wordcraft_engine::io::open_path(&path).unwrap();
         assert!(saved.plain_text(wordcraft_doc::StoryRef::Body).contains(UNSAVED));
         let _ = std::fs::remove_dir_all(&dir);
