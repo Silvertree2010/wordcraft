@@ -2575,3 +2575,8 @@ preview	Title	Örnek
 
 # Backstage › Recover (#586)
 	Recover	Kurtar
+
+# Insert Hyperlink › Place in This Document (#1370)
+	Existing File or Web Page	Varolan Dosya veya Web Sayfası
+	Link to:	Bağlantı:
+	Place in This Document	Bu Belgede Bir Yer
