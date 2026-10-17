@@ -1314,6 +1314,8 @@ struct Body<'a> {
     containers: Vec<Vec<FBlock>>,
     fmt: Vec<Fmt>,
     para: Option<Para>,
+    /// The text read last ended in a space collapsed from XML whitespace (not a `text:s`).
+    xml_space_end: bool,
     para_cont: bool,
     /// Open lists: (style name, item open, item used).
     lists: Vec<(Option<String>, bool)>,
@@ -1481,8 +1483,19 @@ impl Body<'_> {
             || p.mark_ins.is_some()
             || p.mark_del.is_some()
             || p.inlines.iter().any(|i| matches!(i, Inline::Text(_, f) if f.ins.is_some() || f.del.is_some()));
-        if p.kind != Kind::Code && !tracked {
-            p.trim();
+        // Leading XML whitespace is never read (see `text`); a trailing one is trimmed here.
+        // Explicit `text:s` spaces and tabs stay.
+        let xml_space_end = std::mem::take(&mut self.xml_space_end);
+        if p.kind != Kind::Code
+            && !tracked
+            && xml_space_end
+            && let Some(Inline::Text(t, _)) = p.inlines.last_mut()
+            && t.ends_with(' ')
+        {
+            t.pop();
+            if t.is_empty() {
+                p.inlines.pop();
+            }
         }
         if p.kind == Kind::Rule && !p.is_empty() {
             p.kind = Kind::Normal;
@@ -1522,6 +1535,7 @@ impl Body<'_> {
             }
             self.start_para(None, None);
         }
+        self.xml_space_end = false;
         if let Some(p) = &mut self.para {
             p.push_text(t, &f);
         }
@@ -1571,6 +1585,7 @@ impl Body<'_> {
         }
         if !s.is_empty() {
             self.push_text(&s);
+            self.xml_space_end = s.ends_with(' ');
         }
     }
 
@@ -2177,6 +2192,7 @@ fn parse_tracked(bytes: &[u8]) -> Result<(Flow, SectionProps, Option<bool>), Str
         containers: vec![Vec::new()],
         fmt: Vec::new(),
         para: None,
+        xml_space_end: false,
         para_cont: false,
         lists: Vec::new(),
         lists_saved: Vec::new(),
@@ -2933,5 +2949,19 @@ mod tests {
             let back = import(&export(&doc).unwrap()).unwrap();
             assert_eq!(back.plain_text(wordcraft_doc::StoryRef::Body).trim_end(), src, "{src:?}");
         }
+    }
+
+    #[test]
+    fn explicit_spaces_at_paragraph_ends_are_kept() {
+        // `text:s` spaces are content; only collapsible XML whitespace is trimmed at the ends.
+        let content = format!(
+            r#"<office:document-content {NS_T}><office:body><office:text><text:p><text:s text:c="4"/>lead</text:p><text:p>trail<text:s text:c="2"/></text:p><text:p>  plain  </text:p><text:p>  <text:s/>x <text:s/> </text:p></office:text></office:body></office:document-content>"#
+        );
+        let f = parse(&package(&content, None)).unwrap();
+        let texts: Vec<String> = paras(&f).iter().map(|p| p.text()).collect();
+        assert_eq!(texts, vec!["    lead", "trail  ", "plain", " x  "]);
+        let d = Document::from_text("    indented code  ");
+        let back = import(&export(&d).unwrap()).unwrap();
+        assert_eq!(back.plain_text(wordcraft_doc::StoryRef::Body).trim_end_matches('\n'), "    indented code  ");
     }
 }
