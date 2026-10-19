@@ -1400,7 +1400,7 @@ impl Paragraph {
         let mut a = 0;
         let mut prev_end = false;
         for (i, c) in t.char_indices() {
-            if i >= off {
+            if i > off {
                 break;
             }
             if prev_end && c != ' ' {
@@ -1413,7 +1413,7 @@ impl Paragraph {
             }
         }
         let mut b = t.len();
-        let mut ended = false;
+        let mut ended = t.get(..off).unwrap_or("").ends_with(['.', '!', '?']);
         for (i, c) in t.get(off..).unwrap_or("").char_indices() {
             if ended && c != ' ' {
                 b = off + i;
@@ -1430,6 +1430,16 @@ impl Paragraph {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sentence_at_sentence_start() {
+        let p = Paragraph::with_text("Hello. World", CharProps::default());
+        assert_eq!(p.sentence_at(0), (0, 7));
+        assert_eq!(p.sentence_at(6), (0, 7));
+        assert_eq!(p.sentence_at(7), (7, 12));
+        assert_eq!(p.sentence_at(8), (7, 12));
+        assert_eq!(p.sentence_at(99), (7, 12));
+    }
 
     fn bold() -> CharProps {
         CharProps { bold: Some(true), ..Default::default() }
