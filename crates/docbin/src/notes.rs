@@ -118,7 +118,12 @@ fn sttb_strings(table: &[u8], fc: u32, lcb: u32) -> Option<Vec<String>> {
         };
         at += unit;
         let Some(chars) = b.get(at..at + cch * unit) else { break };
-        at += cch * unit + cb_extra;
+        at += cch * unit;
+        // The string's extra data must be there too, or the table is cut short.
+        if b.get(at..at + cb_extra).is_none() {
+            break;
+        }
+        at += cb_extra;
         let s: String = if extended {
             chars.as_chunks::<2>().0.iter().take(40).map(|c| char::from_u32(u16::from_le_bytes(*c) as u32).unwrap_or('\u{FFFD}')).collect()
         } else {
@@ -161,6 +166,14 @@ mod tests {
         let b = ext_sttb(&["first", "bm2"], &[1, 2, 3, 4]);
         let got = sttb_strings(&b, 0, b.len() as u32).unwrap();
         assert_eq!(got, vec!["first".to_string(), "bm2".to_string()]);
+    }
+
+    #[test]
+    fn a_name_without_its_extra_data_is_dropped() {
+        let mut b = ext_sttb(&["first", "bm2"], &[1, 2, 3, 4]);
+        b.truncate(b.len() - 2);
+        let got = sttb_strings(&b, 0, b.len() as u32).unwrap();
+        assert_eq!(got, vec!["first".to_string()]);
     }
 
     #[test]
