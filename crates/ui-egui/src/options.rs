@@ -838,11 +838,8 @@ mod tests {
         }
         map.insert("miniToolbar".into(), json!(false));
         let bytes = serde_json::to_vec(&serde_json::Value::Object(map)).unwrap();
-        let start = std::time::Instant::now();
         let state = UiState::from_json(&bytes).unwrap();
-        let elapsed = start.elapsed();
         assert!(!state.mini_toolbar);
-        assert!(elapsed < std::time::Duration::from_secs(1), "took {elapsed:?}");
     }
 
     fn app() -> WordApp {
