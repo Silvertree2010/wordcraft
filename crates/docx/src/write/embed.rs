@@ -686,7 +686,8 @@ fn pt(v: f32) -> String {
     s.trim_end_matches('0').trim_end_matches('.').to_string()
 }
 
-/// `name` as a valid OPC part name: no backslashes, empty or dot segments, or encoded separators.
+/// `name` as a valid OPC part name: no backslashes, empty or dot segments, segments ending in a
+/// dot, or encoded separators.
 fn valid_part_name(name: &str) -> String {
     let mut out = Vec::new();
     for seg in name.split('/') {
@@ -696,9 +697,14 @@ fn valid_part_name(name: &str) -> String {
                 seg.replace_range(i..i + 3, "_");
             }
         }
-        if !seg.is_empty() && seg != "." && seg != ".." {
-            out.push(seg);
+        if seg.is_empty() || seg == "." || seg == ".." {
+            continue;
         }
+        // A segment can't end in a dot either (`word/a.`).
+        if seg.ends_with('.') {
+            seg = format!("{}_", seg.trim_end_matches('.'));
+        }
+        out.push(seg);
     }
     if out.is_empty() { "word/embeddings/part.xml".to_string() } else { out.join("/") }
 }
@@ -738,11 +744,11 @@ mod tests {
     fn kept_part_names_are_valid_opc_names() {
         let doc = wordcraft_doc::Document::default();
         let mut w = EmbedWriter::new(&doc);
-        for orig in ["word/a\\b.bin", "word/..\\..\\x.bin", "word/a/../b%2Fc.bin", "word/a//./b%5Cc.bin"] {
+        for orig in ["word/a\\b.bin", "word/..\\..\\x.bin", "word/a/../b%2Fc.bin", "word/a//./b%5Cc.bin", "word/a./b.bin", "word/a..."] {
             let name = w.alloc(orig);
             assert!(!name.contains('\\'), "{name}");
             assert!(!name.to_ascii_lowercase().contains("%2f") && !name.to_ascii_lowercase().contains("%5c"), "{name}");
-            assert!(name.split('/').all(|s| !s.is_empty() && s != "." && s != ".."), "{name}");
+            assert!(name.split('/').all(|s| !s.is_empty() && !s.ends_with('.')), "{name}");
         }
     }
 }
