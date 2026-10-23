@@ -3293,6 +3293,36 @@ fn text_frames_read_and_round_trip() {
     assert!(q.iter().any(|x| x.props.drop_cap == Some(2) && x.props.frame.is_none()));
 }
 
+/// A frame from a `.json` document holds free strings: an empty or unknown wrap, anchor or
+/// alignment is written as the reader's fallback, not as a value outside the schema's enumerations.
+#[test]
+fn text_frame_enumerations_are_validated_on_write() {
+    let mut d = read_body(r#"<w:p><w:r><w:t>a</w:t></w:r></w:p><w:p><w:r><w:t>b</w:t></w:r></w:p>"#);
+    let bad = wordcraft_doc::props::TextFrame {
+        wrap: "x".into(),
+        h_anchor: "nowhere".into(),
+        x_align: Some("bogus".into()),
+        y_align: Some("".into()),
+        ..Default::default()
+    };
+    let frames = [wordcraft_doc::props::TextFrame::default(), bad];
+    let mut it = frames.into_iter();
+    for b in d.body.iter_mut() {
+        if let Block::Para(p) = std::sync::Arc::make_mut(b) {
+            p.props.frame = it.next();
+        }
+    }
+    let xml = text(&unzip(&wordcraft_docx::write(&d).unwrap()), "word/document.xml");
+    let tags: Vec<&str> = xml.split("<w:framePr ").skip(1).map(|s| s.split("/>").next().unwrap_or_default()).collect();
+    assert_eq!(tags.len(), 2, "{xml}");
+    for t in tags {
+        assert!(t.contains(r#"w:wrap="auto""#), "{t}");
+        assert!(t.contains(r#"w:vAnchor="page""#), "{t}");
+        assert!(t.contains(r#"w:hAnchor="page""#), "{t}");
+        assert!(!t.contains("Align"), "{t}");
+    }
+}
+
 /// #2360: a `w:framePr` in the document defaults, the sizeless top-left one Apple Pages writes,
 /// frames no paragraph, as in Word: a header's title and the body's text stay in the text instead
 /// of moving to the page's corner, and the default isn't written back. The defaults' other

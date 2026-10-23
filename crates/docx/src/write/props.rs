@@ -282,14 +282,18 @@ pub fn ppr_inner(w: &mut W, p: &ParaProps, framed: bool, num_change: Option<&Cha
         if f.v_space > 0.0 {
             a.push(("w:vSpace", &vs));
         }
-        a.push(("w:wrap", &f.wrap));
-        a.push(("w:vAnchor", &f.v_anchor));
-        a.push(("w:hAnchor", &f.h_anchor));
-        match &f.x_align {
+        let pick = |v: &str, allowed: &[&'static str], default: &'static str| allowed.iter().copied().find(|a| *a == v).unwrap_or(default);
+        let anchors = ["text", "margin", "page"];
+        a.push(("w:wrap", pick(&f.wrap, &["around", "auto", "notBeside", "none", "tight", "through"], "auto")));
+        a.push(("w:vAnchor", pick(&f.v_anchor, &anchors, "page")));
+        a.push(("w:hAnchor", pick(&f.h_anchor, &anchors, "page")));
+        let x_align = f.x_align.as_deref().and_then(|x| ["left", "center", "right", "inside", "outside"].into_iter().find(|a| *a == x));
+        let y_align = f.y_align.as_deref().and_then(|y| ["top", "center", "bottom", "inline", "inside", "outside"].into_iter().find(|a| *a == y));
+        match x_align {
             Some(x) => a.push(("w:xAlign", x)),
             None => a.push(("w:x", &fx)),
         }
-        match &f.y_align {
+        match y_align {
             Some(y) => a.push(("w:yAlign", y)),
             None => a.push(("w:y", &fy)),
         }
