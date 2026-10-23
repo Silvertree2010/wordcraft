@@ -1483,6 +1483,7 @@ impl Session {
         let default_language_before = self.prefs.default_language.clone();
         let run = spec.run;
         let mutates = spec.mutates;
+        let rev_before = self.rev;
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| crate::cmd::column::dispatch(self, id, mutates, run, params)));
         let mut result = match result {
             Ok(r) => r,
@@ -1527,7 +1528,7 @@ impl Session {
                     self.note_edit();
                 }
                 // Outline view: collapsed headings follow edits; the caret stays where it shows.
-                crate::cmd::outline::after_command(self, &sel_before);
+                crate::cmd::outline::after_command(self, &sel_before, self.rev != rev_before);
                 // Extra selected objects last until something else is edited or selected; formatting
                 // them keeps them selected, as in Word.
                 if !matches!(id, "select.addObject" | "arrange.ungroup" | "shape.fill" | "shape.effects") && (spec.mutates || self.sel != sel_before)
