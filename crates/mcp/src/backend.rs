@@ -194,6 +194,11 @@ impl Remote {
                 Ok(r) => break r,
                 Err(e) => {
                     self.conn = None;
+                    // A reply that arrived but can't be read (too long, not UTF-8): the app has
+                    // run the request, so sending it again could run a state-changing one twice.
+                    if e.kind() == std::io::ErrorKind::InvalidData {
+                        return Err(format!("bad reply from app: {e}"));
+                    }
                     if !first {
                         return Err(unreachable(&self.addr, e, self.connected));
                     }
@@ -339,6 +344,37 @@ mod tests {
             }
         });
         (port, rx)
+    }
+
+    #[test]
+    fn an_unreadable_reply_is_not_retried() {
+        // The app answered something that can't be read (here not UTF-8; an over-long reply
+        // takes the same path): the request ran, so it must not be sent again.
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let seen = Arc::new(AtomicUsize::new(0));
+        let n = seen.clone();
+        std::thread::spawn(move || {
+            for stream in listener.incoming().flatten() {
+                let n = n.clone();
+                std::thread::spawn(move || {
+                    let mut out = stream.try_clone().unwrap();
+                    for line in BufReader::new(stream).lines() {
+                        if line.is_err() {
+                            return;
+                        }
+                        n.fetch_add(1, Ordering::SeqCst);
+                        if out.write_all(b"\xff\xfe\n").is_err() {
+                            return;
+                        }
+                    }
+                });
+            }
+        });
+        let mut r = Remote::connect_with(&format!("127.0.0.1:{port}"), fixed_key("k1")).unwrap();
+        let e = r.call("engine.execute", json!({"command": "text.insert", "params": {"text": "x"}})).unwrap_err();
+        assert!(e.contains("bad reply"), "{e}");
+        assert_eq!(seen.load(Ordering::SeqCst), 1, "the request was sent once");
     }
 
     fn fixed_key(key: &'static str) -> KeyFinder {
