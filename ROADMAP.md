@@ -1,6 +1,8 @@
+> 2026-11-08 · #6021 review: HTML charset assignments in prose/comments cannot override real declarations. Meta-content and XML fallback remain supported; no ranked gap or readiness estimate changes.
+
 # WordCraft roadmap
 
-> **Last reviewed:** 2026-10-31 · **Last updated:** 2026-10-31 · **Change:** minor (#3398: persistent screen paper colors; parity estimates unchanged); previously minor (#3693: additional Delete Previous Sentence command and shortcut; Word-parity estimates unchanged)
+> **Last reviewed:** 2026-10-31 · **Last updated:** 2026-11-08 · **Change:** trivial (#6021 review: HTML encoding comes from meta declarations or the leading XML declaration, excluding charset assignments in prose/comments; readiness unchanged); previously minor (#3398: persistent screen paper colors; parity estimates unchanged); previously minor (#3693: additional Delete Previous Sentence command and shortcut; Word-parity estimates unchanged)
 > **CLI path update:** 2026-11-04 · Options before a non-Unicode input filename no longer make the CLI reject that filename; text option values still require Unicode; `run --file` and `run --script` retain native paths. No ranked gap or readiness estimate changes.
 > **Floating anchor row segments:** 2026-11-07 · A floating anchor after a manual page/column break counts visible content on the far side of the same wrapped row. Marker-only cover anchors retain their previous-page rule. Synthetic picture spacing, placement and history controls; no new native Word measurement. Readiness estimates unchanged.
 
@@ -890,6 +892,7 @@ MATH glyphs that reference the same construction now share its immutable variant
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-11-08 | trivial | #6021 review: HTML charset sniffing accepts meta declarations and leading XML encoding, excluding ordinary text/comments; synthetic decoder regressions, no new native observation or readiness change. |
 | 2026-10-31 | trivial | Control/MCP #2596 review fixes; readiness estimates unchanged |
 | 2026-11-08 | trivial | Progress log: XML line ends in text normalised (#5897) |
 | 2026-11-08 | trivial | Progress log: contextual spacing drops the space after a cell's last Normal paragraph (#5450) |

@@ -310,19 +310,44 @@ fn unescape_in(s: &str, attr: bool) -> String {
     out
 }
 
-fn sniff_charset(head: &str) -> Option<&str> {
-    // The first "charset"/"encoding" may be plain text; take the first one that is a declaration.
-    // `charset` wins over `encoding` (an XML declaration), as before.
-    let declared = |word: &'static str| {
-        head.match_indices(word).find_map(|(i, k)| {
-            let after = head.get(i + k.len()..)?.trim_start().strip_prefix('=')?;
-            let trimmed = after.trim_start().trim_start_matches(['"', '\'']);
-            let end = trimmed.find(|c: char| c.is_whitespace() || matches!(c, '"' | '\'' | ';' | '>' | '/')).unwrap_or(trimmed.len());
-            let label = trimmed[..end].trim();
-            if label.is_empty() { None } else { Some(label) }
-        })
-    };
-    declared("charset").or_else(|| declared("encoding"))
+/// Read only declarations in the bounded HTML prefix, so prose and comments cannot
+/// select the decoder. Meta charset declarations take precedence over XML encoding.
+fn sniff_charset(head: &str) -> Option<String> {
+    use super::lexer::{Lexer, Tok};
+
+    let mut lexer = Lexer { s: head, pos: 0 };
+    while let Some(token) = lexer.next() {
+        let Tok::Start { name, attrs, .. } = token else { continue };
+        if matches!(name.as_str(), "script" | "style" | "title" | "textarea") {
+            lexer.skip_past_end_tag(&name);
+            continue;
+        }
+        if name != "meta" {
+            continue;
+        }
+        if let Some((_, value)) = attrs.iter().find(|(key, value)| key == "charset" && !value.trim().is_empty()) {
+            return Some(value.trim().to_string());
+        }
+        for (_, content) in attrs.iter().filter(|(key, _)| key == "content") {
+            for part in content.split(';') {
+                let Some((key, value)) = part.split_once('=') else { continue };
+                let label = value.trim().trim_matches(['"', '\'']);
+                if key.trim() == "charset" && !label.is_empty() {
+                    return Some(label.to_string());
+                }
+            }
+        }
+    }
+    // XML declarations are only valid at the start. Reuse the attribute tokenizer
+    // on an equivalent start tag rather than accepting arbitrary encoding= text.
+    let xml = head.trim_start().strip_prefix("<?xml")?;
+    if !xml.starts_with(char::is_whitespace) {
+        return None;
+    }
+    let tag = format!("<xml{xml}");
+    let mut xml_lexer = Lexer { s: &tag, pos: 0 };
+    let Tok::Start { attrs, .. } = xml_lexer.next()? else { return None };
+    attrs.into_iter().find_map(|(key, value)| (key == "encoding" && !value.trim().is_empty()).then(|| value.trim().to_string()))
 }
 
 /// Decode HTML bytes: BOM, then a `charset` in the first 2 KB, else UTF-8 with a legacy fallback.
@@ -338,7 +363,7 @@ pub fn decode_as(b: &[u8], charset: Option<&str>) -> String {
         return crate::txt::decode(b);
     }
     let head = String::from_utf8_lossy(b.get(..b.len().min(2048)).unwrap_or(b)).to_ascii_lowercase();
-    let named = charset.map(str::to_ascii_lowercase).or_else(|| sniff_charset(&head).map(str::to_string));
+    let named = charset.map(str::to_ascii_lowercase).or_else(|| sniff_charset(&head));
     let code_page = match named.as_deref().map(str::trim) {
         Some("iso-8859-1" | "latin1" | "us-ascii") => Some(1252),
         Some(cs) => cs
@@ -378,6 +403,42 @@ mod tests {
     fn meta_charset_wins_over_earlier_xml_encoding() {
         let s = decode(b"<?xml version='1.0' encoding='UTF-8'?><meta charset='windows-1251'>\xE0");
         assert!(s.ends_with('\u{0430}'), "{s:?}");
+    }
+
+    #[test]
+    fn charset_assignments_outside_declarations_do_not_override_utf8_meta() {
+        for prefix in [
+            "<title>charset mention charset=windows-1251 text</title>",
+            "<p>charset=windows-1251 text</p>",
+            "<!-- charset=windows-1251 -->",
+            "<script>const encoding = 'charset=windows-1251';</script>",
+            "<style>/* charset=windows-1251 */</style>",
+            "<textarea>charset=windows-1251</textarea>",
+            "<div data-charset='windows-1251'></div>",
+            "<meta data-charset='windows-1251'>",
+        ] {
+            let html = format!("{prefix}<meta charset='utf-8'><p>café</p>");
+            assert_eq!(decode(html.as_bytes()), html, "{prefix}");
+        }
+    }
+
+    #[test]
+    fn meta_content_and_xml_encoding_remain_supported() {
+        for declaration in
+            ["<meta http-equiv='Content-Type' content='text/html; charset=windows-1251'>", "<?xml version='1.0' encoding='windows-1251'?>"]
+        {
+            let mut bytes = declaration.as_bytes().to_vec();
+            bytes.push(0xe0);
+            assert!(decode(&bytes).ends_with('а'), "{declaration}");
+        }
+    }
+
+    #[test]
+    fn encoding_assignments_outside_leading_xml_are_ignored() {
+        for html in ["<p>encoding='windows-1251' café</p>", "<!-- encoding='windows-1251' -->café", "<?xml-stylesheet encoding='windows-1251'?>café"]
+        {
+            assert_eq!(decode(html.as_bytes()), html);
+        }
     }
 
     #[test]
